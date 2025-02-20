@@ -13,21 +13,24 @@ import jakarta.xml.bind.JAXBElement;
 import jakarta.xml.bind.Unmarshaller;
 
 public class CheckDeviceStructure {
-    private static final String BASE_PATH = "../SGrSpecifications/";
-    
+    // TODO make paths configurable
+    private static final String SPEC_PATH = "../SGrSpecifications/";
+    private static final String SPEC_PACKAGE = "com.smartgridready.ns.v0";
+
+    private static final String UNDEFINED_VALUE = "UNDEFINED";
+
     private static final HashMap<String, List<FunctionalProfileFrame>> funcProfiles = new HashMap<>();
 
     public static void main(String[] args) {
-        // TODO Auto-generated method stub
         try {
-            // create a JAXBContext capable of handling classes generated into
-            // the com.abhi.xml.jaxb.generated package
-            JAXBContext jc = JAXBContext.newInstance("com.smartgridready.ns.v0");
+            // create a JAXBContext capable of handling classes generated from XSD
+            JAXBContext jc = JAXBContext.newInstance(SPEC_PACKAGE);
 
             // create an Unmarshaller
             Unmarshaller u = jc.createUnmarshaller();
 
-            for (File file : new File(BASE_PATH + "XMLInstances/FuncProfiles").listFiles(new FilenameFilter() {
+            // parse functional profile definitions
+            for (File file : new File(SPEC_PATH + "XMLInstances/FuncProfiles").listFiles(new FilenameFilter() {
                 @Override
                 public boolean accept(File dir, String name) {
                     return name.endsWith(".xml");
@@ -37,8 +40,10 @@ public class CheckDeviceStructure {
 
                 String type = fpElement.getFunctionalProfile().getFunctionalProfileIdentification()
                         .getFunctionalProfileType();
-                String category = fpElement.getFunctionalProfile().getFunctionalProfileIdentification()
-                        .getFunctionalProfileCategory().value();
+                String category = (fpElement.getFunctionalProfile().getFunctionalProfileIdentification().getFunctionalProfileCategory() != null)
+                        ? fpElement.getFunctionalProfile().getFunctionalProfileIdentification().getFunctionalProfileCategory().value()
+                        : UNDEFINED_VALUE;
+                String version = getVersionString(fpElement.getFunctionalProfile().getFunctionalProfileIdentification().getVersionNumber());
                 String key = type + "@" + category;
 
                 if (funcProfiles.get(key) == null) {
@@ -47,14 +52,28 @@ public class CheckDeviceStructure {
 
                 funcProfiles.get(key).add(fpElement);
 
-                // System.out.println("-->" + key);
-                // System.out.flush();
+                System.out.println();
+                System.out.println("FP: " + key + ", "
+                        + ((fpElement.getFunctionalProfile().getFunctionalProfileIdentification().getLevelOfOperation() != null) ? fpElement.getFunctionalProfile().getFunctionalProfileIdentification().getLevelOfOperation().value() : UNDEFINED_VALUE) + ", "
+                        + version + ", "
+                        + ((fpElement.getReleaseNotes().getState() != null) ? fpElement.getReleaseNotes().getState().value() : UNDEFINED_VALUE) + ", "
+                        + file.getName());
+                System.out.flush();
+
+                if (fpElement.getFunctionalProfile().getFunctionalProfileIdentification().getLevelOfOperation() == null) {
+                    System.err.println("==> undefined FP level of operation");
+                }
+                if (fpElement.getReleaseNotes().getState() == null) {
+                    System.err.println("==> undefined FP release state");
+                }
             }
 
-            System.out.println("");
+            System.out.println();
+            System.out.println();
             System.out.flush();
 
-            for (File file : new File(BASE_PATH + "XMLInstances/ExtInterfaces").listFiles(new FilenameFilter() {
+            // parse EIDs
+            for (File file : new File(SPEC_PATH + "XMLInstances/ExtInterfaces").listFiles(new FilenameFilter() {
                 @Override
                 public boolean accept(File dir, String name) {
                     return name.endsWith(".xml");
@@ -65,10 +84,22 @@ public class CheckDeviceStructure {
 
                 DeviceFrame eidElement = (DeviceFrame) jaxbElement.getValue();
 
-                System.out.println("\n" + eidElement.getDeviceName() + ", " + eidElement.getManufacturerName() + ", "
-                        + eidElement.getDeviceInformation().getLevelOfOperation() + ", "
-                        + eidElement.getReleaseNotes().getState() + ", " + file.getName());
+                String version = getVersionString(eidElement.getDeviceInformation().getVersionNumber());
+
+                System.out.println();
+                System.out.println("EID: " + eidElement.getDeviceName() + ", " + eidElement.getManufacturerName() + ", "
+                        + ((eidElement.getDeviceInformation().getLevelOfOperation() != null) ? eidElement.getDeviceInformation().getLevelOfOperation().value() : UNDEFINED_VALUE) + ", "
+                        + version + ", "
+                        + ((eidElement.getReleaseNotes().getState() != null) ? eidElement.getReleaseNotes().getState().value() : UNDEFINED_VALUE) + ", "
+                        + file.getName());
                 System.out.flush();
+
+                if (eidElement.getDeviceInformation().getLevelOfOperation() == null) {
+                    System.err.println("==> undefined device level of operation");
+                }
+                if (eidElement.getReleaseNotes().getState() == null) {
+                    System.err.println("==> undefined device release state");
+                }
 
                 List<FunctionalProfileBase> profiles = new ArrayList<>();
 
@@ -94,8 +125,10 @@ public class CheckDeviceStructure {
                 for (FunctionalProfileBase prof : profiles) {
                     String type = prof.getFunctionalProfile().getFunctionalProfileIdentification()
                             .getFunctionalProfileType();
-                    String category = prof.getFunctionalProfile().getFunctionalProfileIdentification()
-                            .getFunctionalProfileCategory().value();
+                    String category = (prof.getFunctionalProfile().getFunctionalProfileIdentification().getFunctionalProfileCategory() != null)
+                        ? prof.getFunctionalProfile().getFunctionalProfileIdentification().getFunctionalProfileCategory().value()
+                        : UNDEFINED_VALUE;
+                    String fpVersion = getVersionString(prof.getFunctionalProfile().getFunctionalProfileIdentification().getVersionNumber());
                     String key = type + "@" + category;
 
                     FunctionalProfileFrame ok = checkFunctionalProfile(prof, funcProfiles.get(key), true);
@@ -106,7 +139,7 @@ public class CheckDeviceStructure {
                         if (okVersion == null) {
                             System.err.println("==> no matching FP for " + key);
                         } else {
-                            System.err.println("==> no matching FP for " + key + " (only version)");
+                            System.err.println("==> no matching FP for " + key + " (at version " + fpVersion + ")");
                         }
 
                         ok = okVersion;
@@ -374,5 +407,11 @@ public class CheckDeviceStructure {
         }
 
         return "?";
+    }
+
+    private static String getVersionString(VersionNumber v) {
+        return (v != null)
+            ? String.join(".", String.valueOf(v.getPrimaryVersionNumber()), String.valueOf(v.getSecondaryVersionNumber()), String.valueOf(v.getSubReleaseVersionNumber()))
+            : UNDEFINED_VALUE;
     }
 }
