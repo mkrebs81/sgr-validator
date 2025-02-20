@@ -1,0 +1,43 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    gradlePluginPortal()
+
+    maven {
+        url "https://nexus.library.smartgridready.ch/repository/maven-releases/"
+        mavenContent {
+            releasesOnly()
+        }
+    }
+    maven {
+        url "https://nexus.library.smartgridready.ch/repository/maven-snapshots/"
+        mavenContent {
+            snapshotsOnly()
+        }
+    }
+}
+
+mainClassName = 'validator.CheckDeviceStructure'
+
+sourceSets {
+    main.java.srcDirs = ['src/main/java']
+}
+
+java {
+    sourceCompatibility = "${jdkVersion}"
+    targetCompatibility = "${jdkVersion}"
+}
+
+dependencies {
+    implementation group: 'com.smartgridready', name: 'sgr-specification', version: "${sgrSpecVersion}"
+    implementation group: 'com.sun.xml.bind', name: 'jaxb-impl', version: "${jaxbVersion}"
+}
+
+tasks.withType(JavaCompile) {
+    options.encoding = 'UTF-8'
+}
