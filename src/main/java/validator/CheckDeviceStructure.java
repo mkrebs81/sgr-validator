@@ -3,6 +3,7 @@ package validator;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 
@@ -19,6 +20,7 @@ public class CheckDeviceStructure {
 
     private static final String UNDEFINED_VALUE = "UNDEFINED";
 
+    private static final HashMap<String, List<GenericAttributeFrame>> genAttributes = new HashMap<>();
     private static final HashMap<String, List<FunctionalProfileFrame>> funcProfiles = new HashMap<>();
 
     public static void main(String[] args) {
@@ -29,6 +31,60 @@ public class CheckDeviceStructure {
             // create an Unmarshaller
             Unmarshaller u = jc.createUnmarshaller();
 
+            // parse generic attributes
+            for (File file : new File(SPEC_PATH + "XMLInstances/GenericAttributes").listFiles(new FilenameFilter() {
+                @Override
+                public boolean accept(File dir, String name) {
+                    return name.endsWith(".xml");
+                }
+            })) {
+                @SuppressWarnings("unchecked")
+                JAXBElement<GenericAttributeFrame> jaxbElement = (JAXBElement<GenericAttributeFrame>) u.unmarshal(file);
+                GenericAttributeFrame gaElement = (GenericAttributeFrame) jaxbElement.getValue();
+
+                String name = gaElement.getName();
+
+                String key = (name != null) ? name : UNDEFINED_VALUE;
+
+                if (!key.equals(UNDEFINED_VALUE)) {
+                    if (genAttributes.get(key) == null) {
+                        genAttributes.put(key, new ArrayList<>());
+                    }
+
+                    genAttributes.get(key).add(gaElement);
+                }
+
+                System.out.println();
+                System.out.println("GA: " + key + ", "
+                        + file.getName());
+                System.out.flush();
+
+                if (name == null || name.isBlank()) {
+                    System.err.println("==> undefined GA name");
+                }
+                if (
+                    (gaElement.getDataType() == null) &&
+                    (gaElement.getUnit() == null) &&
+                    (
+                        (gaElement.getGenericAttributeList() == null) ||
+                        (gaElement.getGenericAttributeList().getGenericAttributeListElement() == null) ||
+                        gaElement.getGenericAttributeList().getGenericAttributeListElement().isEmpty()
+                    )
+                ) {
+                    System.err.println("==> no sub-attributes despite no data type");
+                }
+
+                if (
+                    (gaElement.getGenericAttributeList() != null) &&
+                    (gaElement.getGenericAttributeList().getGenericAttributeListElement() != null)
+                ) {
+                    System.out.println("--> " + gaElement.getGenericAttributeList().getGenericAttributeListElement().size() + " sub-attributes");
+                }
+            }
+            System.out.println();
+            System.out.println();
+            System.out.flush();
+
             // parse functional profile definitions
             for (File file : new File(SPEC_PATH + "XMLInstances/FuncProfiles").listFiles(new FilenameFilter() {
                 @Override
@@ -36,6 +92,7 @@ public class CheckDeviceStructure {
                     return name.endsWith(".xml");
                 }
             })) {
+                // TODO why is this no JAXBElement, but GenericAttributeFrame and DeviceFrame are?
                 FunctionalProfileFrame fpElement = (FunctionalProfileFrame) u.unmarshal(file);
 
                 String type = fpElement.getFunctionalProfile().getFunctionalProfileIdentification()
@@ -66,6 +123,28 @@ public class CheckDeviceStructure {
                 if (fpElement.getReleaseNotes().getState() == null) {
                     System.err.println("==> undefined FP release state");
                 }
+
+                if (
+                    (fpElement.getDataPointList() != null) &&
+                    (fpElement.getDataPointList().getDataPointListElement() != null)
+                ) {
+                    System.out.println("--> " + fpElement.getDataPointList().getDataPointListElement().size() + " data points");
+                }
+
+                if (
+                    (fpElement.getGenericAttributeList() != null) &&
+                    (fpElement.getGenericAttributeList().getGenericAttributeListElement() != null)
+                ) {
+                    for (GenericAttributeFunctionalProfile fpAttr: fpElement.getGenericAttributeList().getGenericAttributeListElement()) {
+                        String attrKey = fpAttr.getName();
+                        List<GenericAttributeFrame> genAttrs = genAttributes.getOrDefault(attrKey, Collections.emptyList());
+                        if (genAttrs.isEmpty()) {
+                            System.err.println("==> no matching generic attribute " + attrKey);
+                        }
+                    }
+
+                    System.out.println("--> " + fpElement.getGenericAttributeList().getGenericAttributeListElement().size() + " generic attributes");
+                }
             }
 
             System.out.println();
@@ -81,7 +160,6 @@ public class CheckDeviceStructure {
             })) {
                 @SuppressWarnings("unchecked")
                 JAXBElement<DeviceFrame> jaxbElement = (JAXBElement<DeviceFrame>) u.unmarshal(file);
-
                 DeviceFrame eidElement = (DeviceFrame) jaxbElement.getValue();
 
                 String version = getVersionString(eidElement.getDeviceInformation().getVersionNumber());
@@ -149,6 +227,7 @@ public class CheckDeviceStructure {
                     }
 
                     if (ok != null) {
+                        checkGenericAttributes(prof, ok, key);
                         checkDataPoints(prof, ok, key);
                     }
                 }
@@ -185,6 +264,46 @@ public class CheckDeviceStructure {
         }
 
         return null;
+    }
+
+    private static boolean checkGenericAttributes(FunctionalProfileBase device, FunctionalProfileFrame fp, String key) {
+        List<GenericAttributeFunctionalProfile> fpList = (fp.getGenericAttributeList() != null)
+            ? fp.getGenericAttributeList().getGenericAttributeListElement()
+            : Collections.emptyList();
+        List<GenericAttributeProduct> devList = (device.getGenericAttributeList() != null)
+            ? device.getGenericAttributeList().getGenericAttributeListElement()
+            : Collections.emptyList();
+
+        for (GenericAttributeFunctionalProfile fpElem: fpList) {
+            String fpName = fpElem.getName();
+            boolean found = false;
+
+            for (GenericAttributeProduct devElem : devList) {
+                String devName = devElem.getName();
+
+                if (devName.equals(fpName)) {
+
+                    if (found) {
+                        System.err.println("    nok as two generic attributes with same name:" + fpName + " - in " + key);
+                        return false;
+                    }
+
+                    found = true;
+
+                    if (genAttributes.get(devName) == null) {
+                        System.err.println("    nok as no matching generic attribute " + devName);
+                        return false;
+                    }
+                }
+            }
+
+            if (!found) {
+                System.err.println("    nok as generic attribute " + fpName + " is missing");
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static boolean checkDataPoints(FunctionalProfileBase device, FunctionalProfileFrame fp, String key) {
