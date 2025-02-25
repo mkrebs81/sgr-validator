@@ -1,6 +1,7 @@
 plugins {
     id 'java'
     id 'application'
+    id 'com.github.bjornvester.xjc' version "${xjcPluginVersion}"
 }
 
 repositories {
@@ -22,19 +23,30 @@ repositories {
     }
 }
 
-mainClassName = 'validator.CheckDeviceStructure'
+def xsdPath = "../SGrSpecifications/SchemaDatabase/SGr"
 
-sourceSets {
-    main.java.srcDirs = ['src/main/java']
-}
+mainClassName = 'validator.CheckDeviceStructure'
 
 java {
     sourceCompatibility = "${jdkVersion}"
     targetCompatibility = "${jdkVersion}"
 }
 
+xjc {
+    xsdDir.set(layout.projectDirectory.dir(xsdPath))
+    bindingFiles.setFrom(layout.projectDirectory.dir("src/main/xjb").asFileTree.matching { include("*.xjb") })
+    useJakarta = true
+    addCompilationDependencies = false
+    generateEpisode = false
+}
+
+processResources {
+    from xsdPath
+    exclude '.gitkeep', 'ressources'
+}
+
 dependencies {
-    implementation group: 'com.smartgridready', name: 'sgr-specification', version: "${sgrSpecVersion}"
+    implementation group: 'jakarta.xml.bind', name: 'jakarta.xml.bind-api', version: "${xmlBindVersion}"
     implementation group: 'com.sun.xml.bind', name: 'jaxb-impl', version: "${jaxbVersion}"
 }
 
